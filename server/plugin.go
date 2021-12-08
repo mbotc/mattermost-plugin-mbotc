@@ -4,7 +4,6 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"sync"
-
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/plugin"
 
@@ -49,7 +48,6 @@ func (p *Plugin) OnActivate() error {
 		return errors.Wrap(err, "failed to create bot account")
 	}
 	p.botUserID = botUserID
-
 	bundlePath, err := p.API.GetBundlePath()
 	if err != nil {
 		return errors.Wrap(err, "couldn't get bundle path")

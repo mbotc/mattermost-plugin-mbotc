@@ -42,7 +42,6 @@ type Sub struct {
 	Message   string `json:"message"`
 }
 
-
 // =================================================================================
 // http Create Notification
 // =================================================================================
@@ -120,7 +119,6 @@ func (p *Plugin) httpCreateNotificationWithButton(r *http.Request) {
 	}
 }
 
-
 // =================================================================================
 // Convert to Notification struct
 // =================================================================================
@@ -197,7 +195,6 @@ func convertRequest(p *Plugin, r *http.Request) Notification {
 
 	return notification
 }
-
 
 // =================================================================================
 // Create notification
@@ -283,7 +280,6 @@ func asSlackAttachment(p *Plugin, notification Notification) ([]*model.SlackAtta
 		},
 	}, nil
 }
-
 
 // =================================================================================
 // Create notification
