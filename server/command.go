@@ -1,8 +1,12 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/mattermost/mattermost-plugin-api/experimental/command"
 	"github.com/mattermost/mattermost-server/v5/model"
@@ -28,9 +32,18 @@ func (p *Plugin) getCommand() (*model.Command, error) {
 	}, nil
 }
 
+type DailyNotice struct {
+	ChannelName string `json:"channel_name"`
+	EndTime     string `json:"end_time"`
+	Message     string `json:"message"`
+	StartTime   string `json:"start_time"`
+	TeamName    string `json:"team_name"`
+	UserName    string `json:"user_name"`
+}
+
 const helpText = "###### Mattermost MBotC Plugin - Slash Command Help\n" +
 	"* `/mbotc help` - help text\n" +
-	"* `/mbotc create` - Create your Notice.\n" +
+	"* `/mbotc create` - Create your Notice\n" +
 	" File Upload is not supported\n" +
 	" If you want to upload file, please visit [here](https://www.mbotc.com)\n"
 
@@ -49,6 +62,7 @@ var mbotcCommandHandler = CommandHandler{
 	handlers: map[string]CommandHandlerFunc{
 		"help":   executeHelp,
 		"create": executeCreate,
+		"today":  executeToday,
 	},
 	defaultHandler: executeHelp,
 }
@@ -77,6 +91,76 @@ func executeCreate(p *Plugin, c *plugin.Context, header *model.CommandArgs, args
 	return &model.CommandResponse{}
 }
 
+func executeToday(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
+	getNoticeList(p, header)
+	return &model.CommandResponse{}
+}
+
+func getNoticeList(p *Plugin, commandArgs *model.CommandArgs) {
+	siteURL := *p.API.GetConfig().ServiceSettings.SiteURL
+
+	requestUrl := siteURL + ":8080/api/v1/notification/today"
+	// create new request
+	req, err := http.NewRequest("GET", requestUrl, nil)
+	if err != nil {
+		// panic()함수는 현재 함수를 즉시 멈추고 현재 함수에 defer 함수들을 모두 실행한 후 즉시 리턴한다
+		fmt.Println("NewRequest Error: ", err)
+		panic(err)
+	}
+
+	// set the header
+	req.Header.Add("userId", commandArgs.UserId)
+
+	client := &http.Client{}
+	resp, err := client.Do(req) // send request
+	if err != nil {
+		fmt.Println("client.Do Error: ", err)
+		panic(err)
+	}
+	defer resp.Body.Close()
+
+	bytes, _ := ioutil.ReadAll(resp.Body)
+
+	var dailyNotices []DailyNotice
+	json.Unmarshal(bytes, &dailyNotices)
+
+	post := &model.Post{
+		UserId:    p.botUserID,
+		ChannelId: commandArgs.ChannelId,
+	}
+
+	var text string
+
+	text = "# Today's Notice\n" +
+		"| Preview :loudspeaker: | Deadline :calendar: |\n" +
+		"| --- | --- |\n"
+
+	if len(dailyNotices) == 0 {
+		text += "| Nothing ... | - |\n"
+	} else {
+		for _, dn := range dailyNotices {
+			var message = strings.Replace(dn.Message, "\n", " ", -1)
+			if len(message) >= 100 {
+				message = message[:100] + " ..."
+			}
+			text += "| " + message + " | " + dn.EndTime + " | \n"
+		}
+	}
+
+	currentTime := time.Now()
+
+	text += "[See More](https://www.mbotc.com/main/detail/" + currentTime.Format("20060102") + ")"
+	var attachment = []*model.SlackAttachment{
+		{
+			Color: "#1352ab",
+			Text:  text,
+		},
+	}
+	post.AddProp("attachments", attachment)
+
+	_ = p.API.SendEphemeralPost(commandArgs.UserId, post)
+}
+
 func (p *Plugin) ExecuteCommand(c *plugin.Context, commandArgs *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
 	args := strings.Fields(commandArgs.Command)
 	if len(args) == 0 || args[0] != "/mbotc" {
@@ -94,6 +178,9 @@ func getAutocompleteData() *model.AutocompleteData {
 
 	create := model.NewAutocompleteData("create", "", "Register your Notice")
 	mbotcAutocomplete.AddCommand(create)
+
+	today := model.NewAutocompleteData("today", "", "Get all today's notices")
+	mbotcAutocomplete.AddCommand(today)
 
 	return mbotcAutocomplete
 }
