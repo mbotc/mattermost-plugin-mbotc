@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
-	"path/filepath"
+	"mime/multipart"
 	"net/http"
+	"path/filepath"
 	"sync"
 
 	"github.com/mattermost/mattermost-server/v5/model"
@@ -48,6 +52,7 @@ func (p *Plugin) OnActivate() error {
 		DisplayName: botDisplayName,
 		Description: botDescription,
 	})
+
 	if err != nil {
 		return errors.Wrap(err, "failed to create bot account")
 	}
@@ -87,9 +92,84 @@ func (p *Plugin) OnActivate() error {
 	return nil
 }
 
+type Notice struct {
+	UserId    string   `json:"user_id"`
+	UserName  string   `json:"user_name"`
+	Message   string   `json:"message"`
+	Time      string   `json:"time"`
+	StartTime string   `json:"start_time"`
+	EndTime   string   `json:"end_time"`
+	FileIds   []string `json:"file_ids"`
+	ChannelId string   `json:"channel_id"`
+}
+
+func ConvertRequest(p *Plugin, r *http.Request) Notice {
+	var notice Notice
+
+	r.ParseMultipartForm(32 << 20) // maxMemory 32MB
+	notice.UserId = r.PostFormValue("user_id")
+	notice.ChannelId = r.PostFormValue("user_name")
+	notice.Message = r.PostFormValue("message")
+	notice.Time = r.PostFormValue("time")
+	notice.StartTime = r.PostFormValue("start_time")
+	notice.EndTime = r.PostFormValue("end_time")
+	notice.ChannelId = r.PostFormValue("channel_id")
+
+	fhs := r.MultipartForm.File["file"]
+	for _, fh := range fhs {
+		f, err := fh.Open()
+		bytefile, err := ConvertFileToByte(f)
+		if err != nil {
+			fmt.Println("ConvertRequest Error : ", err)
+		}
+		notice.FileIds = append(notice.FileIds, UploadFileToMMChannel(p, bytefile, notice.ChannelId, fh.Filename))
+		// f is one of the files
+	}
+
+	return notice
+}
+
+func ConvertFileToByte(file multipart.File) ([]byte, error) {
+	buf := bytes.NewBuffer(nil)
+	if _, err := io.Copy(buf, file); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func UploadFileToMMChannel(p *Plugin, file []byte, channelId string, fileName string) string {
+	// UploadFile(data []byte, channelId string, filename string) (*model.FileInfo, *model.AppError)
+	res, err := p.API.UploadFile(file, channelId, fileName)
+	if err != nil {
+		fmt.Println("UploadFile Error : ", err)
+	}
+	return res.Id
+}
+
 // ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Hello, world!")
+	// 1. FE에서 받아와서
+	var notice Notice
+	notice = ConvertRequest(p, r)
+
+	// 2. MM에 create post
+	post := &model.Post{
+		UserId:    p.botUserID,
+		ChannelId: notice.ChannelId,
+		Message:   notice.Message,
+		FileIds:   notice.FileIds,
+	}
+
+	res, appErr := p.API.CreatePost(post)
+	if appErr != nil {
+		http.Error(w, appErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 3. post 성공하면 그 내용을 BE로 요청
+	w.Header().Set("Content-Type", "application/json")
+	enc := json.NewEncoder(w)
+	enc.Encode(res)
 }
 
 // See https://developers.mattermost.com/extend/plugins/server/reference/
