@@ -2,14 +2,14 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"path/filepath"
-	"net/http"
-	"sync"
-	"encoding/json"
 	"mime/multipart"
+	"net/http"
+	"path/filepath"
+	"sync"
 
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/plugin"
@@ -108,7 +108,7 @@ func ConvertRequest(p *Plugin, r *http.Request) Notice {
 
 	r.ParseMultipartForm(32 << 20) // maxMemory 32MB
 	notice.UserId = r.PostFormValue("user_id")
-	notice.ChannelId = r.PostFormValue("user_name")
+	notice.UserName = r.PostFormValue("user_name")
 	notice.Message = r.PostFormValue("message")
 	notice.Time = r.PostFormValue("time")
 	notice.StartTime = r.PostFormValue("start_time")
@@ -118,6 +118,9 @@ func ConvertRequest(p *Plugin, r *http.Request) Notice {
 	fileheaders := r.MultipartForm.File["file"]
 	for _, fileheader := range fileheaders {
 		file, err := fileheader.Open()
+		if err != nil {
+			fmt.Println("fileheader.Open() : ", err)
+		}
 		bytefile, err := ConvertFileToByte(file)
 		if err != nil {
 			fmt.Println("ConvertRequest Error : ", err)
@@ -147,17 +150,20 @@ func UploadFileToMMChannel(p *Plugin, file []byte, channelId string, fileName st
 // ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	// 1. FE에서 받아와서
-	var notice Notice
-
-	notice = ConvertRequest(p, r)
+	notice := ConvertRequest(p, r)
 
 	// 2. MM에 create post
 	post := &model.Post{
 		UserId:    p.botUserID,
 		ChannelId: notice.ChannelId,
-		Message:   notice.Message,
 		FileIds:   notice.FileIds,
 	}
+
+	attachment, err := asSlackAttachment(p, notice)
+	if err != nil {
+		fmt.Print(err)
+	}
+	post.AddProp("attachments", attachment)
 
 	res, appErr := p.API.CreatePost(post)
 	if appErr != nil {
@@ -172,3 +178,53 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 }
 
 // See https://developers.mattermost.com/extend/plugins/server/reference/
+
+func asSlackAttachment(p *Plugin, notice Notice) ([]*model.SlackAttachment, error) {
+	var text = notice.Message
+	var fields []*model.SlackAttachmentField
+
+	teamName, channelName := SearchTeamNameAndChannelName(p, notice.ChannelId)
+
+	var postBy = teamName + " / " + channelName
+
+	if notice.StartTime == notice.EndTime {
+		fields = append(fields, &model.SlackAttachmentField{
+			Title: ":calendar: Deadline",
+			Value: notice.StartTime,
+			Short: false,
+		})
+	} else {
+		fields = append(fields, &model.SlackAttachmentField{
+			Title: ":calendar: Start Time",
+			Value: notice.StartTime,
+			Short: true,
+		})
+		fields = append(fields, &model.SlackAttachmentField{
+			Title: ":calendar: End Time",
+			Value: notice.EndTime,
+			Short: true,
+		})
+	}
+
+	fields = append(fields, &model.SlackAttachmentField{
+		Title: ":lower_left_fountain_pen: Author",
+		Value: notice.UserName,
+		Short: false,
+	})
+	// 작성자 이름, 기간시작(yyyy-mm-dd hh:mm), 기간끝, 컨텐츠, 팀, 채널
+	return []*model.SlackAttachment{
+		{
+			AuthorName: postBy,
+			Color:      "#1352ab",
+			Text:       text,
+			Fields:     fields,
+		},
+	}, nil
+}
+
+func SearchTeamNameAndChannelName(p *Plugin, channelId string) (teamName string, channelName string) {
+	channel, _ := p.API.GetChannel(channelId)
+	team, _ := p.API.GetTeam(channel.TeamId)
+
+	return team.DisplayName, channel.DisplayName
+}
