@@ -41,7 +41,7 @@ type DailyNotice struct {
 	UserName    string `json:"user_name"`
 }
 
-type CommandHandlerFunc func(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse
+type CommandHandlerFunc func(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse
 
 type CommandHandler struct {
 	handlers       map[string]CommandHandlerFunc
@@ -61,37 +61,59 @@ var mbotcCommandHandler = CommandHandler{
 	defaultHandler: executeHelp,
 }
 
-func (ch CommandHandler) Handle(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
+func (ch CommandHandler) Handle(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse {
 	for n := len(args); n > 0; n-- {
 		h := ch.handlers[strings.Join(args[:n], "/")]
 		if h != nil {
-			return h(p, c, header, args[n:]...)
+			return h(p, c, commandArgs, args[n:]...)
 		}
 	}
-	return ch.defaultHandler(p, c, header, args...)
+	return ch.defaultHandler(p, c, commandArgs, args...)
 }
 
-func executeHelp(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
-	return p.help(header)
+func executeHelp(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse {
+	return p.help(commandArgs)
 }
 
-func (p *Plugin) help(header *model.CommandArgs) *model.CommandResponse {
+func (p *Plugin) help(commandArgs *model.CommandArgs) *model.CommandResponse {
 	var helpText = "###### Mattermost MBotC Plugin - Slash Command Help\n" +
 		"* `/mbotc help` - help text\n" +
 		"* `/mbotc create` - Create your Notice\n" +
 		" File Upload is not supported\n" +
-		" If you want to upload file, please visit [here](" + clientUrl + ")\n"
-	p.postCommandResponse(header, helpText)
+		" If you want to upload file, please visit [here](" + clientUrl + ")\n" +
+		"* `/mbotc today` - Create your Notice\n"
+	p.postCommandResponse(commandArgs, helpText)
 	return &model.CommandResponse{}
 }
 
-func executeCreate(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
-	p.openCreateDialog(header)
+func checkAuthentication(p *Plugin, commandArgs *model.CommandArgs) error {
+	resp, err := checkUserExists(p, commandArgs.UserId)
+	if err != nil {
+		p.postCommandResponse(commandArgs, "Oops! Something wrong")
+		return err
+	}
+	if resp.StatusCode == 404 {
+		var text = "Please login first to use MBotC service.\n" +
+		"[Login here](" + clientUrl + ")"
+		p.postCommandResponse(commandArgs, text)
+		return errors.New("USER NOT FOUND")
+	}
+	return nil
+}
+
+func executeCreate(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse {
+	err := checkAuthentication(p, commandArgs)
+	if err == nil {
+		p.openCreateDialog(commandArgs)
+	}
 	return &model.CommandResponse{}
 }
 
-func executeToday(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
-	getNoticeList(p, header)
+func executeToday(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse {
+	err := checkAuthentication(p, commandArgs)
+	if err == nil {
+		getNoticeList(p, commandArgs)
+	}
 	return &model.CommandResponse{}
 }
 
