@@ -1,10 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"strings"
 	"time"
 
@@ -25,20 +22,20 @@ func (p *Plugin) getCommand() (*model.Command, error) {
 		DisplayName:          "mbotc",
 		Description:          "Integration with MBotC.",
 		AutoComplete:         true,
-		AutoCompleteDesc:     "Available commands: help, create",
+		AutoCompleteDesc:     "Available commands: help, create, today",
 		AutoCompleteHint:     "[command]",
 		AutocompleteData:     getAutocompleteData(),
 		AutocompleteIconData: iconData,
 	}, nil
 }
 
-type DailyNotice struct {
+type DailyNotification struct {
+	TeamName    string `json:"team_name"`
 	ChannelName string `json:"channel_name"`
-	EndTime     string `json:"end_time"`
+	UserName    string `json:"user_name"`
 	Message     string `json:"message"`
 	StartTime   string `json:"start_time"`
-	TeamName    string `json:"team_name"`
-	UserName    string `json:"user_name"`
+	EndTime     string `json:"end_time"`
 }
 
 type CommandHandlerFunc func(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse
@@ -48,10 +45,6 @@ type CommandHandler struct {
 	defaultHandler CommandHandlerFunc
 }
 
-//===================================================
-// command Handler
-// command : func
-//===================================================
 var mbotcCommandHandler = CommandHandler{
 	handlers: map[string]CommandHandlerFunc{
 		"help":   executeHelp,
@@ -77,32 +70,15 @@ func executeHelp(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, a
 
 func (p *Plugin) help(commandArgs *model.CommandArgs) *model.CommandResponse {
 	var helpText = "###### Mattermost MBotC Plugin - Slash Command Help\n" +
-		"* `/mbotc help` - help text\n" +
-		"* `/mbotc create` - Create your Notice\n" +
-		" File Upload is not supported\n" +
-		" If you want to upload file, please visit [here](" + clientUrl + ")\n" +
-		"* `/mbotc today` - Create your Notice\n"
-	p.postCommandResponse(commandArgs, helpText)
+		"* `/mbotc create` - Create a new Notification with dialog " +
+		" (or [here](+ " + clientUrl + ") : you can upload files)\n" +
+		"* `/mbotc today` - Will list the notifications you subscribed\n"
+	p.postEphemeralResponse(commandArgs.UserId, commandArgs.ChannelId, helpText)
 	return &model.CommandResponse{}
 }
 
-func checkAuthentication(p *Plugin, commandArgs *model.CommandArgs) error {
-	resp, err := checkUserExists(p, commandArgs.UserId)
-	if err != nil {
-		p.postCommandResponse(commandArgs, "Oops! Something wrong")
-		return err
-	}
-	if resp.StatusCode == 404 {
-		var text = "Please login first to use MBotC service.\n" +
-		"[Login here](" + clientUrl + ")"
-		p.postCommandResponse(commandArgs, text)
-		return errors.New("USER NOT FOUND")
-	}
-	return nil
-}
-
 func executeCreate(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse {
-	err := checkAuthentication(p, commandArgs)
+	err := checkAuthentication(p, commandArgs.UserId, commandArgs.ChannelId)
 	if err == nil {
 		p.openCreateDialog(commandArgs)
 	}
@@ -110,73 +86,11 @@ func executeCreate(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs,
 }
 
 func executeToday(p *Plugin, c *plugin.Context, commandArgs *model.CommandArgs, args ...string) *model.CommandResponse {
-	err := checkAuthentication(p, commandArgs)
+	err := checkAuthentication(p, commandArgs.UserId, commandArgs.ChannelId)
 	if err == nil {
-		getNoticeList(p, commandArgs)
+		getNotificationList(p, commandArgs)
 	}
 	return &model.CommandResponse{}
-}
-
-func getNoticeList(p *Plugin, commandArgs *model.CommandArgs) {
-	requestUrl := serviceAPIUrl + "/api/v1/notification/today"
-	// create new request
-	req, err := http.NewRequest("GET", requestUrl, nil)
-	if err != nil {
-		fmt.Println("NewRequest Error: ", err)
-		panic(err)
-	}
-
-	// set the header
-	req.Header.Add("userId", commandArgs.UserId)
-
-	client := &http.Client{}
-	resp, err := client.Do(req) // send request
-	if err != nil {
-		fmt.Println("client.Do Error: ", err)
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	bytes, _ := ioutil.ReadAll(resp.Body)
-
-	var dailyNotices []DailyNotice
-	json.Unmarshal(bytes, &dailyNotices)
-
-	post := &model.Post{
-		UserId:    p.botUserID,
-		ChannelId: commandArgs.ChannelId,
-	}
-
-	var text string
-
-	text = "# Today's Notice\n" +
-		"| Preview :loudspeaker: | Deadline :calendar: |\n" +
-		"| --- | --- |\n"
-
-	if len(dailyNotices) == 0 {
-		text += "| Nothing ... | - |\n"
-	} else {
-		for _, dn := range dailyNotices {
-			var message = strings.Replace(dn.Message, "\n", " ", -1)
-			if len(message) >= 100 {
-				message = message[:100] + " ..."
-			}
-			text += "| " + message + " | " + dn.EndTime + " | \n"
-		}
-	}
-
-	loc, _ := time.LoadLocation("Asia/Seoul")
-	currentTime := time.Now().In(loc)
-	text += "[See More](" + clientUrl + "/main/detail/" + currentTime.Format("20060102") + ")"
-	var attachment = []*model.SlackAttachment{
-		{
-			Color: "#1352ab",
-			Text:  text,
-		},
-	}
-	post.AddProp("attachments", attachment)
-
-	_ = p.API.SendEphemeralPost(commandArgs.UserId, post)
 }
 
 func (p *Plugin) ExecuteCommand(c *plugin.Context, commandArgs *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
@@ -189,35 +103,27 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, commandArgs *model.CommandArg
 }
 
 func getAutocompleteData() *model.AutocompleteData {
-	mbotcAutocomplete := model.NewAutocompleteData("mbotc", "[command]", "Available commands: help, term, date")
+	mbotcAutocomplete := model.NewAutocompleteData("mbotc", "[command]", "Available commands: help, create, today")
 
-	help := model.NewAutocompleteData("help", "", "Guide for mbotc")
+	help := model.NewAutocompleteData("help", "", "Guide for mbotc slash command")
 	mbotcAutocomplete.AddCommand(help)
 
-	create := model.NewAutocompleteData("create", "", "Register your Notice")
+	create := model.NewAutocompleteData("create", "", "Register your Notification")
 	mbotcAutocomplete.AddCommand(create)
 
-	today := model.NewAutocompleteData("today", "", "Get all today's notices")
+	today := model.NewAutocompleteData("today", "", "Get today's notification list")
 	mbotcAutocomplete.AddCommand(today)
 
 	return mbotcAutocomplete
 }
 
-// Post Message to Channel with Bot
-func (p *Plugin) postCommandResponse(args *model.CommandArgs, text string) {
-	post := &model.Post{
-		UserId:    p.botUserID,
-		ChannelId: args.ChannelId,
-		Message:   text,
-	}
-	_ = p.API.SendEphemeralPost(args.UserId, post)
-}
-
+// Open form dialog for /mbotc create
 func (p *Plugin) openCreateDialog(args *model.CommandArgs) {
 	siteURL := *p.API.GetConfig().ServiceSettings.SiteURL
+	requestUrl := fmt.Sprintf("%s/plugins/%s/api/v1/create-notification-with-command", siteURL, pluginId)
 	dialogRequest := model.OpenDialogRequest{
 		TriggerId: args.TriggerId,
-		URL:       fmt.Sprintf("%s/plugins/%s/api/v1/create-notice-with-command", siteURL, "com.mattermost.plugin-mbotc"),
+		URL:       requestUrl,
 		Dialog:    getDialog(),
 	}
 
@@ -225,31 +131,31 @@ func (p *Plugin) openCreateDialog(args *model.CommandArgs) {
 }
 
 func getDialog() model.Dialog {
-	loc, _ := time.LoadLocation("Asia/Seoul")
+	loc, _ := time.LoadLocation(timezone)
 	currentTime := time.Now().In(loc)
 
 	return model.Dialog{
 		CallbackId: "somecallbackid",
-		Title:      "Create Notice",
+		Title:      "Create Notification",
 		Elements: []model.DialogElement{{
 			DisplayName: "Date",
 			Name:        "start_time",
 			Type:        "text",
 			Placeholder: "YYYY-MM-DD hh:mm",
 			Default:     currentTime.Format("2006-01-02 15:04"),
-			HelpText:    "e.g. 2021-11-05 09:00",
+			HelpText:    "e.g. 2006-01-02 15:04",
 		}, {
 			DisplayName: "End date",
 			Name:        "end_time",
 			Type:        "text",
 			Optional:    true,
 			Placeholder: "YYYY-MM-DD hh:mm",
-			HelpText:    "e.g. 2021-11-05 18:00",
+			HelpText:    "e.g. 2006-01-02 15:04",
 		}, {
-			DisplayName: "Content",
-			Name:        "content",
+			DisplayName: "Message",
+			Name:        "message",
 			Type:        "textarea",
-			Placeholder: "Write what you want to notice",
+			Placeholder: "Write notification message",
 			HelpText:    "Write in Markdown syntax.",
 		}},
 		SubmitLabel:    "Submit",

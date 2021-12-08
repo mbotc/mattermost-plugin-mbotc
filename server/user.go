@@ -3,25 +3,42 @@ package main
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/pkg/errors"
 )
 
+func checkAuthentication(p *Plugin, userId string, channelId string) error {
+	resp, err := checkUserExists(p, userId)
+
+	if err != nil {
+		p.postEphemeralResponse(userId, channelId, "Oops! Something wrong")
+		return err
+	}
+
+	if resp.StatusCode == 404 {
+		var message = "Please login first to use MBotC service.\n" +
+		"[Login here](" + clientUrl + ")"
+		p.postEphemeralResponse(userId, channelId, message)
+		return errors.New("USER NOT FOUND")
+	}
+
+	return nil
+}
+
+// Check if user exists in Database
 func checkUserExists(p *Plugin, userId string) (*http.Response, error) {
 	requestUrl := serviceAPIUrl + "/api/v1/user"
-	// create new request
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
 		fmt.Println("NewRequest Error: ", err)
 		panic(err)
 	}
-
-	// set the header
 	req.Header.Add("userId", userId)
 
 	client := &http.Client{}
-	resp, err := client.Do(req) // send request
+	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Println("client.Do Error: ", err)
-		// panic(err)
 	}
 	defer resp.Body.Close()
 
