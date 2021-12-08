@@ -2,14 +2,14 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"mime/multipart"
-	"net/http"
 	"path/filepath"
+	"net/http"
 	"sync"
+	"encoding/json"
+	"mime/multipart"
 
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/plugin"
@@ -115,15 +115,14 @@ func ConvertRequest(p *Plugin, r *http.Request) Notice {
 	notice.EndTime = r.PostFormValue("end_time")
 	notice.ChannelId = r.PostFormValue("channel_id")
 
-	fhs := r.MultipartForm.File["file"]
-	for _, fh := range fhs {
-		f, err := fh.Open()
-		bytefile, err := ConvertFileToByte(f)
+	fileheaders := r.MultipartForm.File["file"]
+	for _, fileheader := range fileheaders {
+		file, err := fileheader.Open()
+		bytefile, err := ConvertFileToByte(file)
 		if err != nil {
 			fmt.Println("ConvertRequest Error : ", err)
 		}
-		notice.FileIds = append(notice.FileIds, UploadFileToMMChannel(p, bytefile, notice.ChannelId, fh.Filename))
-		// f is one of the files
+		notice.FileIds = append(notice.FileIds, UploadFileToMMChannel(p, bytefile, notice.ChannelId, fileheader.Filename))
 	}
 
 	return notice
@@ -138,7 +137,6 @@ func ConvertFileToByte(file multipart.File) ([]byte, error) {
 }
 
 func UploadFileToMMChannel(p *Plugin, file []byte, channelId string, fileName string) string {
-	// UploadFile(data []byte, channelId string, filename string) (*model.FileInfo, *model.AppError)
 	res, err := p.API.UploadFile(file, channelId, fileName)
 	if err != nil {
 		fmt.Println("UploadFile Error : ", err)
@@ -150,6 +148,7 @@ func UploadFileToMMChannel(p *Plugin, file []byte, channelId string, fileName st
 func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Request) {
 	// 1. FE에서 받아와서
 	var notice Notice
+
 	notice = ConvertRequest(p, r)
 
 	// 2. MM에 create post
