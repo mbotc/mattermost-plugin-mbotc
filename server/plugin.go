@@ -108,7 +108,7 @@ func ConvertRequest(p *Plugin, r *http.Request) Notice {
 
 	r.ParseMultipartForm(32 << 20) // maxMemory 32MB
 	notice.UserId = r.PostFormValue("user_id")
-	notice.ChannelId = r.PostFormValue("user_name")
+	notice.UserName = r.PostFormValue("user_name")
 	notice.Message = r.PostFormValue("message")
 	notice.Time = r.PostFormValue("time")
 	notice.StartTime = r.PostFormValue("start_time")
