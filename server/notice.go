@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -39,13 +40,73 @@ type Sub struct {
 	Content   string `json:"content"`
 }
 
+// =================================================================================
+// http Create Notice
+// =================================================================================
+func (p *Plugin) httpCreateNoticeWithCommand(w http.ResponseWriter, r *http.Request) {
+	var err error
+	notice, err := convertDialogForm(p, r)
+	if err != nil {
+		fmt.Print(err)
+		post := getConvertErrorPost(p, notice)
+		p.API.SendEphemeralPost(notice.UserId, post)
+		return
+	}
+	p.httpCreatePost(w, notice)
+}
+
+func (p *Plugin) httpCreateNoticeWithEditor(w http.ResponseWriter, r *http.Request) {
+	notice := convertRequest(p, r)
+	p.httpCreatePost(w, notice)
+}
+
+func (p *Plugin) httpCreateNoticeWithButton(w http.ResponseWriter, r *http.Request) (*http.Response, error) {
+	var request struct {
+		PostId string `json:"post_id"`
+	}
+	err := json.NewDecoder(r.Body).Decode(&request)
+	if err != nil {
+		fmt.Print("err", err)
+	}
+	post, err := p.API.GetPost(request.PostId)
+
+	var notice Notice
+	notice.UserId = post.UserId
+	notice.Message = post.Message
+	notice.StartTime = time.Now().Format("2006-01-02 15:04")
+	notice.EndTime = time.Now().Format("2006-01-02") + " 23:59"
+	notice.FileIds = post.FileIds
+	notice.ChannelId = post.ChannelId
+	notice.PostId = post.Id
+
+	resPost := &model.Post{
+		UserId:    p.botUserID,
+		ChannelId: notice.ChannelId,
+	}
+
+	resp, err := postRequestToNotificationAPI(notice)
+	if err != nil || resp.StatusCode != 200 {
+		resPost.Message = "Registration failed"
+		p.API.SendEphemeralPost(notice.UserId, resPost)
+	} else {
+		resPost.Message = "Registration success"
+		reaction := &model.Reaction{
+			UserId:    p.botUserID,
+			PostId:    notice.PostId,
+			EmojiName: "ok_hand",
+		}
+		p.API.AddReaction(reaction)
+		p.API.SendEphemeralPost(notice.UserId, resPost)
+	}
+	return resp, err
+}
+
 func convertDialogForm(p *Plugin, r *http.Request) (Notice, error) {
 	var notice Notice
 	var dialogForm DialogForm
 
 	err := json.NewDecoder(r.Body).Decode(&dialogForm)
 	if err != nil {
-		fmt.Println("ConvertDialogForm Error : ", err)
 		panic(err)
 	}
 
@@ -95,23 +156,6 @@ func convertRequest(p *Plugin, r *http.Request) Notice {
 	return notice
 }
 
-func (p *Plugin) httpCreateNoticeWithCommand(w http.ResponseWriter, r *http.Request) {
-	var err error
-	notice, err := convertDialogForm(p, r)
-	if err != nil {
-		fmt.Print(err)
-		post := getConvertErrorPost(p, notice)
-		p.API.SendEphemeralPost(notice.UserId, post)
-		return
-	}
-	p.httpCreatePost(w, notice)
-}
-
-func (p *Plugin) httpCreateNoticeWithEditor(w http.ResponseWriter, r *http.Request) {
-	notice := convertRequest(p, r)
-	p.httpCreatePost(w, notice)
-}
-
 func (p *Plugin) httpCreatePost(w http.ResponseWriter, notice Notice) {
 	post := &model.Post{
 		UserId:    p.botUserID,
@@ -130,8 +174,11 @@ func (p *Plugin) httpCreatePost(w http.ResponseWriter, notice Notice) {
 		return
 	}
 	notice.PostId = resPost.Id
+	postRequestToNotificationAPI(notice)
+}
 
-	requestUrl := serverUrl + "/api/v1/notification"
+func postRequestToNotificationAPI(notice Notice) (*http.Response, error) {
+	requestUrl := serviceAPIUrl + "/api/v1/notification"
 	noticeJSON, err := json.Marshal(notice)
 	if err != nil {
 		fmt.Println(err)
@@ -141,6 +188,7 @@ func (p *Plugin) httpCreatePost(w http.ResponseWriter, notice Notice) {
 		panic(err)
 	}
 	defer resp.Body.Close()
+	return resp, err
 }
 
 func getConvertErrorPost(p *Plugin, notice Notice) *model.Post {

@@ -9,6 +9,7 @@ import (
 const (
 	routeAPICreateNoticeWithCommand = "/api/v1/create-notice-with-command"
 	routeAPICreateNoticeWithEditor  = "/api/v1/create-notice-with-editor"
+	routeAPICreateNoticeWithButton  = "/api/v1/create-notice-with-button"
 )
 
 // ServeHTTP demonstrates a plugin that handles HTTP requests by greeting the world.
@@ -20,6 +21,8 @@ func (p *Plugin) ServeHTTP(c *plugin.Context, w http.ResponseWriter, r *http.Req
 		p.httpCreateNoticeWithCommand(w, r)
 	case routeAPICreateNoticeWithEditor:
 		p.httpCreateNoticeWithEditor(w, r)
+	case routeAPICreateNoticeWithButton:
+		p.httpCreateNoticeWithButton(w, r)
 
 	default:
 		http.Error(w, "Bad Request", http.StatusBadRequest)
