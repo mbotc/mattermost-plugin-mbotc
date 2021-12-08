@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/mattermost/mattermost-server/v6/model"
-	"github.com/mattermost/mattermost-server/v6/plugin"
+	"github.com/mattermost/mattermost-server/v5/model"
+	"github.com/mattermost/mattermost-server/v5/plugin"
 
 	"github.com/pkg/errors"
 )
@@ -25,7 +25,6 @@ type Plugin struct {
 
 	// botUserID of the created bot account.
 	botUserID string
-	bot *model.Bot
 
 	// configurationLock synchronizes access to the configuration.
 	configurationLock sync.RWMutex
@@ -44,16 +43,16 @@ type Plugin struct {
 // OnActivate checks if the configurations is valid and ensures the bot account exists
 func (p *Plugin) OnActivate() error {
 	// create a bot
-	bot, appErr := p.API.CreateBot(&model.Bot{
+	botUserID, err := p.Helpers.EnsureBot(&model.Bot{
 		Username:    botUserName,
 		DisplayName: botDisplayName,
 		Description: botDescription,
 	})
-	if appErr != nil {
-		return errors.Wrap(appErr, "failed to create bot account")
+	if err != nil {
+		return errors.Wrap(err, "failed to create bot account")
 	}
 	// allocate botUserID if success to create bot account
-	p.botUserID = bot.UserId
+	p.botUserID = botUserID
 
 	// GetBundlePath returns the absolute path where the plugin's bundle was unpacked.
 	bundlePath, err := p.API.GetBundlePath()
@@ -68,7 +67,7 @@ func (p *Plugin) OnActivate() error {
 	}
 
 	// Set bot profile image
-	if appErr := p.API.SetProfileImage(bot.UserId, profileImage); appErr != nil {
+	if appErr := p.API.SetProfileImage(botUserID, profileImage); appErr != nil {
 		return errors.Wrap(appErr, "couldn't set profile image")
 	}
 
