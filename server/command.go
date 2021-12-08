@@ -1,11 +1,7 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-api/experimental/command"
@@ -25,36 +21,18 @@ func (p *Plugin) getCommand() (*model.Command, error) {
 		DisplayName:          "mbotc",
 		Description:          "Integration with MBotC.",
 		AutoComplete:         true,
-		AutoCompleteDesc:     "Available commands: help, term, date",
+		AutoCompleteDesc:     "Available commands: help, create",
 		AutoCompleteHint:     "[command]",
 		AutocompleteData:     getAutocompleteData(),
 		AutocompleteIconData: iconData,
 	}, nil
 }
 
-type DailyNotice struct {
-	ChannelName string `json:"channel_name"`
-	EndTime     string `json:"end_time"`
-	Message     string `json:"message"`
-	StartTime   string `json:"start_time"`
-	TeamName    string `json:"team_name"`
-	UserName    string `json:"user_name"`
-}
-
 const helpText = "###### Mattermost MBotC Plugin - Slash Command Help\n" +
 	"* `/mbotc help` - help text\n" +
-	"* `/mbotc term` - Register your Term Notice.\n" +
-	"	```\n" +
-	"	[Template]\n" +
-	"	<write here what you want to notice with markdown format>\n" +
-	"	`date YYYY-MM-DD hh:mm - YYYY-MM-DD hh:mm\n" +
-	"	```\n" +
-	"* `/mbotc date` - Register your Date Notice.\n" +
-	"	```\n" +
-	"	[Template]\n" +
-	"	<write here what you want to notice with markdown format>\n" +
-	"	`date YYYY-MM-DD hh:mm\n" +
-	"	```\n"
+	"* `/mbotc create` - Create your Notice.\n" +
+	" File Upload is not supported\n" +
+	" If you want to upload file, please visit [here](https://www.mbotc.com)\n"
 
 type CommandHandlerFunc func(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse
 
@@ -69,10 +47,8 @@ type CommandHandler struct {
 //===================================================
 var mbotcCommandHandler = CommandHandler{
 	handlers: map[string]CommandHandlerFunc{
-		"help":  executeHelp,
-		"term":  executeTerm,
-		"date":  executeDate,
-		"today": executeToday,
+		"help":   executeHelp,
+		"create": executeCreate,
 	},
 	defaultHandler: executeHelp,
 }
@@ -96,81 +72,9 @@ func (p *Plugin) help(header *model.CommandArgs) *model.CommandResponse {
 	return &model.CommandResponse{}
 }
 
-func executeTerm(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
-	p.postCommandResponse(header, "###### Successfully registered your term notice:\n"+header.Command)
-	p.registerNotice(header)
+func executeCreate(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
+	p.openCreateDialog(header)
 	return &model.CommandResponse{}
-}
-
-func executeDate(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
-	p.postCommandResponse(header, "###### Successfully registered your term notice:\n"+header.Command)
-	p.registerNotice(header)
-	return &model.CommandResponse{}
-}
-
-func executeToday(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
-	getNoticeList(p, header)
-	return &model.CommandResponse{}
-}
-
-func getNoticeList(p *Plugin, commandArgs *model.CommandArgs) {
-	// create new request
-	req, err := http.NewRequest("GET", "http://localhost:8080/api/v1/notification/today", nil)
-	if err != nil {
-		// panic()함수는 현재 함수를 즉시 멈추고 현재 함수에 defer 함수들을 모두 실행한 후 즉시 리턴한다
-		fmt.Println(err)
-		panic(err)
-	}
-
-	// set the header
-	req.Header.Add("auth", commandArgs.UserId)
-
-	client := &http.Client{}
-	resp, err := client.Do(req) // send request
-	if err != nil {
-		fmt.Println(err)
-		panic(err)
-	}
-	defer resp.Body.Close()
-
-	bytes, _ := ioutil.ReadAll(resp.Body)
-
-	var dailyNotices []DailyNotice
-	json.Unmarshal(bytes, &dailyNotices)
-
-	post := &model.Post{
-		UserId:    p.botUserID,
-		ChannelId: commandArgs.ChannelId,
-	}
-
-	for _, dn := range dailyNotices {
-		attachment, err := createAttachment(dn)
-		if err != nil {
-			fmt.Print(err)
-		}
-		post.AddProp("attachments", attachment)
-	}
-
-	_ = p.API.SendEphemeralPost(commandArgs.UserId, post)
-}
-
-// Send Post Request to our Bot server
-func (p *Plugin) registerNotice(commandArgs *model.CommandArgs) {
-	pbytes, _ := json.Marshal(commandArgs)
-	buff := bytes.NewBuffer(pbytes)
-	// http.Post(url, request body MIME type, data)
-	resp, err := http.Post("http://httpbin.org/post", "application/json", buff)
-	if err != nil {
-		fmt.Println(err)
-	}
-	defer resp.Body.Close()
-
-	// Check Response
-	respBody, err := ioutil.ReadAll(resp.Body)
-	if err == nil {
-		str := string(respBody)
-		fmt.Println(str)
-	}
 }
 
 func (p *Plugin) ExecuteCommand(c *plugin.Context, commandArgs *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
@@ -188,14 +92,8 @@ func getAutocompleteData() *model.AutocompleteData {
 	help := model.NewAutocompleteData("help", "", "Guide for mbotc")
 	mbotcAutocomplete.AddCommand(help)
 
-	term := model.NewAutocompleteData("term", "[text]", "Register your Term Notice (Please refer to /help)")
-	mbotcAutocomplete.AddCommand(term)
-
-	date := model.NewAutocompleteData("date", "[text]", "Register your Date Notice (Please refer to /help)")
-	mbotcAutocomplete.AddCommand(date)
-
-	today := model.NewAutocompleteData("today", "", "Get all today's notices")
-	mbotcAutocomplete.AddCommand(today)
+	create := model.NewAutocompleteData("create", "", "Register your Notice")
+	mbotcAutocomplete.AddCommand(create)
 
 	return mbotcAutocomplete
 }
@@ -210,42 +108,43 @@ func (p *Plugin) postCommandResponse(args *model.CommandArgs, text string) {
 	_ = p.API.SendEphemeralPost(args.UserId, post)
 }
 
-func createAttachment(notice DailyNotice) ([]*model.SlackAttachment, error) {
-	var text = notice.Message
-	var fields []*model.SlackAttachmentField
-	var postedBy = notice.TeamName + " / " + notice.ChannelName
-
-	if notice.StartTime == notice.EndTime {
-		fields = append(fields, &model.SlackAttachmentField{
-			Title: ":calendar: Deadline",
-			Value: notice.StartTime,
-			Short: false,
-		})
-	} else {
-		fields = append(fields, &model.SlackAttachmentField{
-			Title: ":calendar: Start Time",
-			Value: notice.StartTime,
-			Short: true,
-		})
-		fields = append(fields, &model.SlackAttachmentField{
-			Title: ":calendar: End Time",
-			Value: notice.EndTime,
-			Short: true,
-		})
+func (p *Plugin) openCreateDialog(args *model.CommandArgs) {
+	siteURL := *p.API.GetConfig().ServiceSettings.SiteURL
+	listenAddress := *p.API.GetConfig().ServiceSettings.ListenAddress
+	dialogRequest := model.OpenDialogRequest{
+		TriggerId: args.TriggerId,
+		URL:       fmt.Sprintf("%s/plugins/%s/mm", siteURL+listenAddress, "com.mattermost.plugin-mbotc"),
+		Dialog:    getDialog(),
 	}
 
-	fields = append(fields, &model.SlackAttachmentField{
-		Title: ":lower_left_fountain_pen: Author",
-		Value: notice.UserName,
-		Short: false,
-	})
+	p.API.OpenInteractiveDialog(dialogRequest)
+}
 
-	return []*model.SlackAttachment{
-		{
-			AuthorName: postedBy,
-			Color:      "#1352ab",
-			Text:       text,
-			Fields:     fields,
-		},
-	}, nil
+func getDialog() model.Dialog {
+	return model.Dialog{
+		CallbackId: "somecallbackid",
+		Title:      "Create Notice",
+		Elements: []model.DialogElement{{
+			DisplayName: "Date",
+			Name:        "start_time",
+			Type:        "text",
+			Placeholder: "YYYY-MM-DD hh:mm",
+			HelpText:    "e.g. 2021-11-05 09:00",
+		}, {
+			DisplayName: "End date",
+			Name:        "end_time",
+			Type:        "text",
+			Optional:    true,
+			Placeholder: "YYYY-MM-DD hh:mm",
+			HelpText:    "e.g. 2021-11-05 18:00",
+		}, {
+			DisplayName: "Content",
+			Name:        "content",
+			Type:        "textarea",
+			Placeholder: "Write what you want to notice",
+			HelpText:    "Write in Markdown syntax.",
+		}},
+		SubmitLabel:    "Submit",
+		NotifyOnCancel: false,
+	}
 }
