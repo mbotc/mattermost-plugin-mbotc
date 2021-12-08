@@ -70,11 +70,14 @@ func (p *Plugin) httpCreateNoticeWithButton(w http.ResponseWriter, r *http.Reque
 	}
 	post, err := p.API.GetPost(request.PostId)
 
+	loc, _ := time.LoadLocation("Asia/Seoul")
+	currentTime := time.Now().In(loc)
+
 	var notice Notice
 	notice.UserId = post.UserId
 	notice.Message = post.Message
-	notice.StartTime = time.Now().Format("2006-01-02 15:04")
-	notice.EndTime = time.Now().Format("2006-01-02") + " 23:59"
+	notice.StartTime = currentTime.Format("2006-01-02 15:04")
+	notice.EndTime = currentTime.Format("2006-01-02") + " 23:59"
 	notice.FileIds = post.FileIds
 	notice.ChannelId = post.ChannelId
 	notice.PostId = post.Id
