@@ -41,12 +41,6 @@ type DailyNotice struct {
 	UserName    string `json:"user_name"`
 }
 
-const helpText = "###### Mattermost MBotC Plugin - Slash Command Help\n" +
-	"* `/mbotc help` - help text\n" +
-	"* `/mbotc create` - Create your Notice\n" +
-	" File Upload is not supported\n" +
-	" If you want to upload file, please visit [here](https://www.mbotc.com)\n"
-
 type CommandHandlerFunc func(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse
 
 type CommandHandler struct {
@@ -82,6 +76,11 @@ func executeHelp(p *Plugin, c *plugin.Context, header *model.CommandArgs, args .
 }
 
 func (p *Plugin) help(header *model.CommandArgs) *model.CommandResponse {
+	var helpText = "###### Mattermost MBotC Plugin - Slash Command Help\n" +
+		"* `/mbotc help` - help text\n" +
+		"* `/mbotc create` - Create your Notice\n" +
+		" File Upload is not supported\n" +
+		" If you want to upload file, please visit [here](" + clientUrl + ")\n"
 	p.postCommandResponse(header, helpText)
 	return &model.CommandResponse{}
 }
@@ -97,13 +96,11 @@ func executeToday(p *Plugin, c *plugin.Context, header *model.CommandArgs, args 
 }
 
 func getNoticeList(p *Plugin, commandArgs *model.CommandArgs) {
-	siteURL := *p.API.GetConfig().ServiceSettings.SiteURL
-
-	requestUrl := siteURL + ":8080/api/v1/notification/today"
+	mbotcServerUrl := p.getConfiguration().MbotcServerUrl
+	requestUrl := mbotcServerUrl + "/api/v1/notification/today"
 	// create new request
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
-		// panic()함수는 현재 함수를 즉시 멈추고 현재 함수에 defer 함수들을 모두 실행한 후 즉시 리턴한다
 		fmt.Println("NewRequest Error: ", err)
 		panic(err)
 	}
@@ -148,8 +145,7 @@ func getNoticeList(p *Plugin, commandArgs *model.CommandArgs) {
 	}
 
 	currentTime := time.Now()
-
-	text += "[See More](https://www.mbotc.com/main/detail/" + currentTime.Format("20060102") + ")"
+	text += "[See More](" + clientUrl + "/main/detail/" + currentTime.Format("20060102") + ")"
 	var attachment = []*model.SlackAttachment{
 		{
 			Color: "#1352ab",
@@ -197,10 +193,9 @@ func (p *Plugin) postCommandResponse(args *model.CommandArgs, text string) {
 
 func (p *Plugin) openCreateDialog(args *model.CommandArgs) {
 	siteURL := *p.API.GetConfig().ServiceSettings.SiteURL
-	listenAddress := *p.API.GetConfig().ServiceSettings.ListenAddress
 	dialogRequest := model.OpenDialogRequest{
 		TriggerId: args.TriggerId,
-		URL:       fmt.Sprintf("%s/plugins/%s/mm", siteURL+listenAddress, "com.mattermost.plugin-mbotc"),
+		URL:       fmt.Sprintf("%s/plugins/%s/api/v1/create-notice-with-command", siteURL, "com.mattermost.plugin-mbotc"),
 		Dialog:    getDialog(),
 	}
 
