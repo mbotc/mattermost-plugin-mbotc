@@ -96,8 +96,7 @@ func executeToday(p *Plugin, c *plugin.Context, header *model.CommandArgs, args 
 }
 
 func getNoticeList(p *Plugin, commandArgs *model.CommandArgs) {
-	mbotcServerUrl := p.getConfiguration().MbotcServerUrl
-	requestUrl := mbotcServerUrl + "/api/v1/notification/today"
+	requestUrl := serviceAPIUrl + "/api/v1/notification/today"
 	// create new request
 	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
@@ -144,7 +143,8 @@ func getNoticeList(p *Plugin, commandArgs *model.CommandArgs) {
 		}
 	}
 
-	currentTime := time.Now()
+	loc, _ := time.LoadLocation("Asia/Seoul")
+	currentTime := time.Now().In(loc)
 	text += "[See More](" + clientUrl + "/main/detail/" + currentTime.Format("20060102") + ")"
 	var attachment = []*model.SlackAttachment{
 		{
