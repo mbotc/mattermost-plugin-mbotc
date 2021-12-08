@@ -1,6 +1,11 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
 
 	"github.com/mattermost/mattermost-plugin-api/experimental/command"
@@ -20,7 +25,7 @@ func (p *Plugin) getCommand() (*model.Command, error) {
 		DisplayName:          "mbotc",
 		Description:          "Integration with MBotC.",
 		AutoComplete:         true,
-		AutoCompleteDesc:     "Available commands: help",
+		AutoCompleteDesc:     "Available commands: help, term, date",
 		AutoCompleteHint:     "[command]",
 		AutocompleteData:     getAutocompleteData(),
 		AutocompleteIconData: iconData,
@@ -28,7 +33,19 @@ func (p *Plugin) getCommand() (*model.Command, error) {
 }
 
 const helpText = "###### Mattermost MBotC Plugin - Slash Command Help\n" +
-	"* `/mbotc help` - help text"
+	"* `/mbotc help` - help text\n" +
+	"* `/mbotc term` - Register your Term Notice.\n" +
+	"	```\n" +
+	"	[Template]\n" +
+	"	<write here what you want to notice with markdown format>\n" +
+	"	`date YYYY-MM-DD hh:mm - YYYY-MM-DD hh:mm\n" +
+	"	```\n" +
+	"* `/mbotc date` - Register your Date Notice.\n" +
+	"	```\n" +
+	"	[Template]\n" +
+	"	<write here what you want to notice with markdown format>\n" +
+	"	`date YYYY-MM-DD hh:mm\n" +
+	"	```\n"
 
 type CommandHandlerFunc func(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse
 
@@ -43,7 +60,9 @@ type CommandHandler struct {
 //===================================================
 var mbotcCommandHandler = CommandHandler{
 	handlers: map[string]CommandHandlerFunc{
-		"help":       executeHelp,
+		"help": executeHelp,
+		"term": executeTerm,
+		"date": executeDate,
 	},
 	defaultHandler: executeHelp,
 }
@@ -67,6 +86,37 @@ func (p *Plugin) help(header *model.CommandArgs) *model.CommandResponse {
 	return &model.CommandResponse{}
 }
 
+func executeTerm(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
+	p.postCommandResponse(header, "###### Successfully registered your term notice:\n"+header.Command)
+	p.registerNotice(header)
+	return &model.CommandResponse{}
+}
+
+func executeDate(p *Plugin, c *plugin.Context, header *model.CommandArgs, args ...string) *model.CommandResponse {
+	p.postCommandResponse(header, "###### Successfully registered your term notice:\n"+header.Command)
+	p.registerNotice(header)
+	return &model.CommandResponse{}
+}
+
+// Send Post Request to our Bot server
+func (p *Plugin) registerNotice(commandArgs *model.CommandArgs) {
+	pbytes, _ := json.Marshal(commandArgs)
+	buff := bytes.NewBuffer(pbytes)
+	// http.Post(url, request body MIME type, data)
+	resp, err := http.Post("http://httpbin.org/post", "application/json", buff)
+	if err != nil {
+		fmt.Println(err)
+	}
+	defer resp.Body.Close()
+
+	// Check Response
+	respBody, err := ioutil.ReadAll(resp.Body)
+	if err == nil {
+		str := string(respBody)
+		fmt.Println(str)
+	}
+}
+
 func (p *Plugin) ExecuteCommand(c *plugin.Context, commandArgs *model.CommandArgs) (*model.CommandResponse, *model.AppError) {
 	args := strings.Fields(commandArgs.Command)
 	if len(args) == 0 || args[0] != "/mbotc" {
@@ -77,15 +127,21 @@ func (p *Plugin) ExecuteCommand(c *plugin.Context, commandArgs *model.CommandArg
 }
 
 func getAutocompleteData() *model.AutocompleteData {
-	webexAutocomplete := model.NewAutocompleteData("mbotc", "[command]", "Available commands: help")
+	mbotcAutocomplete := model.NewAutocompleteData("mbotc", "[command]", "Available commands: help, term, date")
 
 	help := model.NewAutocompleteData("help", "", "Guide for mbotc")
-	webexAutocomplete.AddCommand(help)
+	mbotcAutocomplete.AddCommand(help)
 
-	return webexAutocomplete
+	term := model.NewAutocompleteData("term", "[text]", "Register your Term Notice (Please refer to /help)")
+	mbotcAutocomplete.AddCommand(term)
+
+	date := model.NewAutocompleteData("date", "[text]", "Register your Date Notice (Please refer to /help)")
+	mbotcAutocomplete.AddCommand(date)
+
+	return mbotcAutocomplete
 }
 
-// Post Message to Channel
+// Post Message to Channel with Bot
 func (p *Plugin) postCommandResponse(args *model.CommandArgs, text string) {
 	post := &model.Post{
 		UserId:    p.botUserID,
