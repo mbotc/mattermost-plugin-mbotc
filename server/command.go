@@ -216,6 +216,7 @@ func getDialog() model.Dialog {
 			Name:        "start_time",
 			Type:        "text",
 			Placeholder: "YYYY-MM-DD hh:mm",
+			Default:     time.Now().Format("2006-01-02 15:04"),
 			HelpText:    "e.g. 2021-11-05 09:00",
 		}, {
 			DisplayName: "End date",
