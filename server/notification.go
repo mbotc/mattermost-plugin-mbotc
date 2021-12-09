@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"regexp"
-	"time"
-	"io/ioutil"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -264,10 +264,11 @@ func asSlackAttachment(p *Plugin, notification Notification) ([]*model.SlackAtta
 		})
 	}
 
-	user, _ := p.API.GetUser(notification.UserId)
+	author := getAuthor(p, notification.UserId)
+
 	fields = append(fields, &model.SlackAttachmentField{
-		Title: ":lower_left_fountain_pen: Author",
-		Value: user.Username,
+		Title: ":fountain_pen: Author",
+		Value: author,
 		Short: false,
 	})
 
