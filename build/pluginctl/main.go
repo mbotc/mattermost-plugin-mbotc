@@ -8,7 +8,7 @@ import (
 	"net"
 	"os"
 
-	"github.com/mattermost/mattermost-server/v6/model"
+	"github.com/mattermost/mattermost-server/v5/model"
 )
 
 const helpText = `
@@ -56,21 +56,6 @@ func pluginctl() error {
 }
 
 func getClient() (*model.Client4, error) {
-	socketPath := os.Getenv("MM_LOCALSOCKETPATH")
-	if socketPath == "" {
-		socketPath = model.LocalModeSocketPath
-	}
-
-	client, connected := getUnixClient(socketPath)
-	if connected {
-		log.Printf("Connecting using local mode over %s", socketPath)
-		return client, nil
-	}
-
-	if os.Getenv("MM_LOCALSOCKETPATH") != "" {
-		log.Printf("No socket found at %s for local mode deployment. Attempting to authenticate with credentials.", socketPath)
-	}
-
 	siteURL := os.Getenv("MM_SERVICESETTINGS_SITEURL")
 	adminToken := os.Getenv("MM_ADMIN_TOKEN")
 	adminUsername := os.Getenv("MM_ADMIN_USERNAME")
@@ -91,24 +76,16 @@ func getClient() (*model.Client4, error) {
 	if adminUsername != "" && adminPassword != "" {
 		client := model.NewAPIv4Client(siteURL)
 		log.Printf("Authenticating as %s against %s.", adminUsername, siteURL)
-		_, _, err := client.Login(adminUsername, adminPassword)
-		if err != nil {
-			return nil, fmt.Errorf("failed to login as %s: %w", adminUsername, err)
+
+		_, resp := client.Login(adminUsername, adminPassword)
+		if resp.Error != nil {
+			return errors.Wrapf(resp.Error, "failed to login as %s", adminUsername)
 		}
 
 		return client, nil
 	}
 
 	return nil, errors.New("one of MM_ADMIN_TOKEN or MM_ADMIN_USERNAME/MM_ADMIN_PASSWORD must be defined")
-}
-
-func getUnixClient(socketPath string) (*model.Client4, bool) {
-	_, err := net.Dial("unix", socketPath)
-	if err != nil {
-		return nil, false
-	}
-
-	return model.NewAPIv4SocketClient(socketPath), true
 }
 
 // deploy attempts to upload and enable a plugin via the Client4 API.
@@ -121,9 +98,9 @@ func deploy(client *model.Client4, pluginID, bundlePath string) error {
 	defer pluginBundle.Close()
 
 	log.Print("Uploading plugin via API.")
-	_, _, err = client.UploadPluginForced(pluginBundle)
-	if err != nil {
-		return fmt.Errorf("failed to upload plugin bundle: %s", err.Error())
+	_, resp := client.UploadPluginForced(pluginBundle)
+	if resp.Error != nil {
+		return errors.Wrap(resp.Error, "failed to upload plugin bundle")
 	}
 
 	log.Print("Enabling plugin.")

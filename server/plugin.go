@@ -4,7 +4,6 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"sync"
-
 	"github.com/mattermost/mattermost-server/v5/model"
 	"github.com/mattermost/mattermost-server/v5/plugin"
 
@@ -39,6 +38,10 @@ type Plugin struct {
 
 // OnActivate checks if the configurations is valid and ensures the bot account exists
 func (p *Plugin) OnActivate() error {
+	if p.API.GetConfig().ServiceSettings.SiteURL == nil {
+		return errors.New("We couldn't find a siteURL. Please set a siteURL and restart the plugin")
+	}
+
 	botUserID, err := p.Helpers.EnsureBot(&model.Bot{
 		Username:    botUserName,
 		DisplayName: botDisplayName,
@@ -49,7 +52,6 @@ func (p *Plugin) OnActivate() error {
 		return errors.Wrap(err, "failed to create bot account")
 	}
 	p.botUserID = botUserID
-
 	bundlePath, err := p.API.GetBundlePath()
 	if err != nil {
 		return errors.Wrap(err, "couldn't get bundle path")

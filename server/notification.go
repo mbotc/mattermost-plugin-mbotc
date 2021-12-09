@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"regexp"
-	"time"
-	"io/ioutil"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 
@@ -41,7 +41,6 @@ type Sub struct {
 	EndTime   string `json:"end_time"`
 	Message   string `json:"message"`
 }
-
 
 // =================================================================================
 // http Create Notification
@@ -120,7 +119,6 @@ func (p *Plugin) httpCreateNotificationWithButton(r *http.Request) {
 	}
 }
 
-
 // =================================================================================
 // Convert to Notification struct
 // =================================================================================
@@ -198,7 +196,6 @@ func convertRequest(p *Plugin, r *http.Request) Notification {
 	return notification
 }
 
-
 // =================================================================================
 // Create notification
 // =================================================================================
@@ -267,10 +264,11 @@ func asSlackAttachment(p *Plugin, notification Notification) ([]*model.SlackAtta
 		})
 	}
 
-	user, _ := p.API.GetUser(notification.UserId)
+	author := getAuthor(p, notification.UserId)
+
 	fields = append(fields, &model.SlackAttachmentField{
-		Title: ":lower_left_fountain_pen: Author",
-		Value: user.Username,
+		Title: ":fountain_pen: Author",
+		Value: author,
 		Short: false,
 	})
 
@@ -283,7 +281,6 @@ func asSlackAttachment(p *Plugin, notification Notification) ([]*model.SlackAtta
 		},
 	}, nil
 }
-
 
 // =================================================================================
 // Create notification

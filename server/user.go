@@ -44,3 +44,14 @@ func checkUserExists(p *Plugin, userId string) (*http.Response, error) {
 
 	return resp, err
 }
+
+func getAuthor(p *Plugin, userId string) string {
+	user, _ := p.API.GetUser(userId)
+	var author string
+	if user.Nickname != "" {
+		author = user.Nickname
+	} else {
+		author = user.Username
+	}
+	return author
+}
