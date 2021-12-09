@@ -38,6 +38,10 @@ type Plugin struct {
 
 // OnActivate checks if the configurations is valid and ensures the bot account exists
 func (p *Plugin) OnActivate() error {
+	if p.API.GetConfig().ServiceSettings.SiteURL == nil {
+		return errors.New("We couldn't find a siteURL. Please set a siteURL and restart the plugin")
+	}
+
 	botUserID, err := p.Helpers.EnsureBot(&model.Bot{
 		Username:    botUserName,
 		DisplayName: botDisplayName,
