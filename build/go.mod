@@ -1,4 +1,4 @@
-module github.com/mattermost/mattermost-plugin-starter-template/build
+module github.com/mbotc/mattermost-plugin-mbotc/build
 
 go 1.12
 

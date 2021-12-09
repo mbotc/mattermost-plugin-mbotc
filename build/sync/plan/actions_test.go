@@ -8,7 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/mattermost/mattermost-plugin-starter-template/build/sync/plan"
+	"github.com/mbotc/mattermost-plugin-mbotc/build/sync/plan"
 )
 
 func TestCopyDirectory(t *testing.T) {
